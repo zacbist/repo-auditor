@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Report Viewer</title>
+<style>
+:root{--bg:#0d1117;--fg:#c9d1d9;--card:#161b22;--border:#30363d;--accent:#58a6ff;--muted:#8b949e;--critical:#e74c3c;--high:#e67e22;--medium:#f39c12;--low:#95a5a6;--ok:#2ecc71}
+@media(prefers-color-scheme:light){:root{--bg:#fff;--fg:#24292f;--card:#f6f8fa;--border:#d0d7de;--accent:#0969da;--muted:#656d76;--critical:#cf222e;--high:#bc4c00;--medium:#9a6700;--low:#6e7781;--ok:#1a7f37}}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;background:var(--bg);color:var(--fg);line-height:1.6;padding:1rem;max-width:1200px;margin:0 auto}
+h1{font-size:1.4rem;margin-bottom:.5rem}
+h2{font-size:1.1rem;margin:2rem 0 .5rem;border-bottom:1px solid var(--border);padding-bottom:.25rem}
+h3{font-size:.95rem;margin:1rem 0 .4rem;color:var(--accent)}
+.meta{background:var(--card);border:1px solid var(--border);border-radius:6px;padding:1rem;margin:1rem 0;font-size:.85rem}
+.meta p{margin:.15rem 0}
+.sev{display:inline-block;padding:1px 8px;border-radius:3px;color:#fff;font-size:.75rem;font-weight:600;text-transform:uppercase}
+.sev-critical{background:var(--critical)}.sev-high{background:var(--high)}.sev-medium{background:var(--medium)}.sev-low{background:var(--low)}
+table{width:100%;border-collapse:collapse;font-size:.82rem;margin-bottom:1rem}
+th{text-align:left;padding:6px 8px;background:var(--card);border-bottom:2px solid var(--border);font-weight:600}
+td{padding:5px 8px;border-bottom:1px solid var(--border);vertical-align:top}
+tr:hover{background:var(--card)}
+.loc{max-width:300px;word-break:break-all}.val code{background:var(--card);padding:1px 4px;border-radius:3px;font-size:.8rem}
+.fp{color:var(--muted);font-family:monospace;font-size:.75rem}
+.extra{color:var(--muted);font-size:.8rem}
+.warn{color:var(--critical);font-weight:600}
+.exposed td{background:rgba(231,76,60,.08)}
+.ok-icon{color:var(--ok)}.fail-icon{color:var(--critical)}
+.screenshot{max-width:100%;border:1px solid var(--border);border-radius:6px;margin:.5rem 0}
+.drop-zone{border:2px dashed var(--border);border-radius:8px;padding:3rem;text-align:center;color:var(--muted);cursor:pointer;transition:border-color .2s}
+.drop-zone:hover,.drop-zone.over{border-color:var(--accent);color:var(--fg)}
+.drop-zone input{display:none}
+.summary-bar{display:flex;gap:.5rem;flex-wrap:wrap;margin:.5rem 0}
+.hidden{display:none}
+.section-desc{color:var(--muted);font-size:.85rem;margin-bottom:.5rem}
+.cookie-domain{display:inline-block;background:var(--card);border:1px solid var(--border);border-radius:3px;padding:1px 6px;margin:2px;font-size:.78rem}
+.profile-card{background:var(--card);border:1px solid var(--border);border-radius:6px;padding:1rem;margin:.5rem 0}
+</style>
+</head>
+<body>
+
+<div id="landing">
+  <h1 id="page-title">Report Viewer</h1>
+  <div class="drop-zone" id="dropZone">
+    <p>Drop a <strong>report.json</strong> here or click to select</p>
+    <input type="file" id="fileInput" accept=".json">
+  </div>
+</div>
+
+<div id="report" class="hidden"></div>
+
+<script>
+const $ = s => document.querySelector(s);
+const ce = t => document.createElement(t);
+const esc = s => {const d=ce('div');d.textContent=s;return d.innerHTML};
+
+const dropZone=$('#dropZone'), fileInput=$('#fileInput');
+dropZone.onclick=()=>fileInput.click();
+dropZone.ondragover=e=>{e.preventDefault();dropZone.classList.add('over')};
+dropZone.ondragleave=()=>dropZone.classList.remove('over');
+dropZone.ondrop=e=>{e.preventDefault();dropZone.classList.remove('over');handleFile(e.dataTransfer.files[0])};
+fileInput.onchange=e=>handleFile(e.target.files[0]);
+
+function handleFile(f){
+  if(!f)return;
+  const r=new FileReader();
+  r.onload=e=>{
+    try{renderReport(JSON.parse(e.target.result))}
+    catch(err){alert('Invalid JSON: '+err.message)}
+  };
+  r.readAsText(f);
+}
+
+function sevClass(s){return 'sev sev-'+s}
+
+function renderReport(data){
+  $('#landing').classList.add('hidden');
+  const el=$('#report');
+  el.classList.remove('hidden');
+  el.innerHTML='';
+
+  const r=data.report;
+  el.appendChild(heading('h1',r.title));
+
+  // Meta
+  const meta=ce('div');meta.className='meta';
+  meta.innerHTML=`
+    <p><strong>${esc(label('Host'))}:</strong> ${esc(r.hostname)}</p>
+    <p><strong>${esc(label('Scanned'))}:</strong> ${esc(r.paths.join(', '))}</p>
+    <p><strong>${esc(label('Duration'))}:</strong> ${r.duration_seconds}s</p>
+    <p><strong>${esc(label('Total Findings'))}:</strong> ${r.total_findings}</p>
+    <div class="summary-bar">${sevSummary(r.severity_summary)}</div>
+  `;
+  el.appendChild(meta);
+
+  // Modules
+  if(data.modules&&data.modules.length){
+    el.appendChild(heading('h2',label('Module Status')));
+    const t=ce('table');
+    t.innerHTML='<thead><tr><th>'+[label('Module'),label('Status'),label('Note')].join('</th><th>')+'</th></tr></thead>';
+    const tb=ce('tbody');
+    data.modules.forEach(m=>{
+      const tr=ce('tr');
+      tr.innerHTML=`<td>${esc(m.name)}<br><span class="extra">${esc(m.description)}</span></td><td>${m.accessed}/${m.attempted}</td><td class="extra">${esc((m.note||'').slice(0,120))}</td>`;
+      tb.appendChild(tr);
+    });
+    t.appendChild(tb);el.appendChild(t);
+  }
+
+  // Sections
+  (data.sections||[]).forEach(s=>{
+    el.appendChild(heading('h2',s.title+(s.count?' ('+s.count+')':'')));
+    const desc=ce('p');desc.className='section-desc';desc.textContent=s.description;el.appendChild(desc);
+
+    if(s.type==='findings') renderFindings(el,s);
+    else if(s.type==='table') renderTable(el,s);
+    else if(s.type==='chrome') renderChrome(el,s);
+    else if(s.type==='docker') renderDocker(el,s);
+    else if(s.type==='internet') renderInternet(el,s);
+  });
+
+  const footer=ce('p');
+  footer.style.cssText='text-align:center;color:var(--muted);margin-top:2rem;font-size:.8rem';
+  footer.textContent=label('Generated at')+' '+r.generated_at;
+  el.appendChild(footer);
+}
+
+function heading(tag,text){const h=ce(tag);h.textContent=text;return h}
+function label(s){return s}
+
+function sevSummary(counts){
+  if(!counts)return'';
+  return['critical','high','medium','low'].map(s=>{
+    const c=counts[s];
+    return c?`<span class="${sevClass(s)}">${s}: ${c}</span>`:'';
+  }).join('');
+}
+
+function renderFindings(el,section){
+  const t=ce('table');
+  t.innerHTML='<thead><tr>'+section.columns.map(c=>'<th>'+esc(c)+'</th>').join('')+'</tr></thead>';
+  const tb=ce('tbody');
+  section.data.forEach(f=>{
+    const tr=ce('tr');
+    const extra=f.additional_count?` <span class="extra">(+${f.additional_count} more)</span>`:'';
+    tr.innerHTML=`
+      <td><span class="${sevClass(f.severity)}">${esc(f.severity)}</span></td>
+      <td>${esc(f.rule_id)}</td>
+      <td class="loc">${esc(f.location)}${extra}</td>
+      <td class="val"><code>${esc(f.redacted_value)}</code></td>
+      <td class="fp">${esc(f.fingerprint)}</td>
+    `;
+    tb.appendChild(tr);
+  });
+  t.appendChild(tb);el.appendChild(t);
+}
+
+function renderTable(el,section){
+  const t=ce('table');
+  t.innerHTML='<thead><tr>'+section.columns.map(c=>'<th>'+esc(c)+'</th>').join('')+'</tr></thead>';
+  const tb=ce('tbody');
+  const keys=section.columns.map(c=>c.toLowerCase().replace(/ /g,'_'));
+  section.data.forEach(row=>{
+    const tr=ce('tr');
+    if(row.exposure==='all interfaces')tr.className='exposed';
+    tr.innerHTML=keys.map(k=>'<td>'+esc(String(row[k]||''))+'</td>').join('');
+    tb.appendChild(tr);
+  });
+  t.appendChild(tb);el.appendChild(t);
+}
+
+function renderChrome(el,section){
+  const d=section.data;
+  const info=ce('div');info.className='meta';
+  info.innerHTML=`
+    <p><strong>${esc(label('Binary'))}:</strong> ${esc(d.binary_path)}</p>
+    <p><strong>${esc(label('Version'))}:</strong> ${esc(d.version)}</p>
+    <p><strong>${esc(label('User Data'))}:</strong> ${esc(d.user_data_dir)}</p>
+  `;
+  if(d.error)info.innerHTML+=`<p class="warn">${esc(d.error)}</p>`;
+  el.appendChild(info);
+
+  (d.profiles||[]).forEach(p=>{
+    const card=ce('div');card.className='profile-card';
+    const status=p.launched?'launched headless':'not launched';
+    let html=`<h3>${esc(p.display_name)} (${esc(p.dir_name)})</h3>`;
+    html+=`<p>${esc(status)} · ${p.cookie_count} ${esc(label('cookies'))}</p>`;
+    if(p.error)html+=`<p class="warn">${esc(p.error)}</p>`;
+
+    if(p.screenshot){
+      html+=`<img class="screenshot" src="${p.screenshot}" alt="${esc(label('Screenshot')+': '+p.display_name)}">`;
+    }
+
+    if(p.cookies_by_domain&&Object.keys(p.cookies_by_domain).length){
+      html+=`<p style="margin-top:.5rem"><strong>${esc(label('Top Domains'))}:</strong></p>`;
+      Object.entries(p.cookies_by_domain).forEach(([domain,count])=>{
+        html+=`<span class="cookie-domain">${esc(domain)} (${count})</span>`;
+      });
+    }
+    card.innerHTML=html;
+    el.appendChild(card);
+  });
+}
+
+function renderDocker(el,section){
+  const d=section.data;
+  const info=ce('div');info.className='meta';
+  info.innerHTML=`<p>${esc(label('Installed'))}: ${d.installed} · ${esc(label('Daemon'))}: ${d.daemon_running}</p>`;
+  if(d.api_exposed)info.innerHTML+=`<p class="warn">${esc(label('WARNING: Docker Engine API exposed on localhost:2375!'))}</p>`;
+  el.appendChild(info);
+
+  if(d.containers&&d.containers.length){
+    const t=ce('table');
+    t.innerHTML=`<thead><tr><th>${esc(label('Name'))}</th><th>${esc(label('Image'))}</th><th>${esc(label('Exposure'))}</th><th>${esc(label('Ports'))}</th></tr></thead>`;
+    const tb=ce('tbody');
+    d.containers.forEach(c=>{
+      const tr=ce('tr');
+      if(c.exposed)tr.className='exposed';
+      tr.innerHTML=`<td>${esc(c.name)}</td><td>${esc(c.image)}</td><td>${c.exposed?esc(label('EXPOSED')):esc(label('local'))}</td><td>${esc((c.ports||[]).join(', '))}</td>`;
+      tb.appendChild(tr);
+    });
+    t.appendChild(tb);el.appendChild(t);
+  }
+}
+
+function renderInternet(el,section){
+  const d=section.data;
+  if(d.public_ip){
+    const p=ce('p');p.innerHTML=`<strong>${esc(label('Public IP'))}:</strong> ${esc(d.public_ip)}`;
+    el.appendChild(p);
+  }
+  if(d.checks&&d.checks.length){
+    const t=ce('table');
+    t.innerHTML=`<thead><tr><th></th><th>${esc(label('Service'))}</th><th>${esc(label('Endpoint'))}</th></tr></thead>`;
+    const tb=ce('tbody');
+    d.checks.forEach(c=>{
+      const tr=ce('tr');
+      tr.innerHTML=`<td class="${c.reachable?'ok-icon':'fail-icon'}">${c.reachable?'✓':'✗'}</td><td>${esc(c.name)}</td><td>${esc(c.host)}:${c.port}</td>`;
+      tb.appendChild(tr);
+    });
+    t.appendChild(tb);el.appendChild(t);
+  }
+}
+</script>
+</body>
+</html>

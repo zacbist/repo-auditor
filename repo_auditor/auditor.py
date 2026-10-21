@@ -1,13 +1,18 @@
-import os
+import structlog
 
 from .scanners import ALL_SCANNERS
+
+log = structlog.get_logger()
 
 
 def run_audit(repo_path):
     results = {}
     for scanner_cls in ALL_SCANNERS:
         scanner = scanner_cls()
-        results[scanner.name] = scanner.scan(repo_path)
+        log.info("scanner.start", scanner=scanner.name, path=repo_path)
+        findings = scanner.scan(repo_path)
+        results[scanner.name] = findings
+        log.info("scanner.done", scanner=scanner.name, count=len(findings))
     return results
 
 

@@ -17,18 +17,17 @@ python run.py https://github.com/org/repo.git
 ### Options
 
 ```
-python run.py <url> [-b branch] [-o output.json] [--format text|json]
+python run.py <url> [-b branch] [-o output.json] [--html report.html] [--text] [--simple]
 ```
 
 ## Checks
 
-- **Secrets** — API keys, AWS credentials, GitHub tokens, private keys, JWTs
-- **Dependencies** — unpinned versions, wildcard specifiers
+- **Secrets** — API keys, AWS credentials, GitHub tokens, private keys, JWTs, exposed .env variables
+- **Dependencies** — unpinned versions, wildcard specifiers, outdated PyPI packages, conda environments
 - **Files** — large files, binaries committed to repo
 - **License** — missing license file detection
-- **Config** — sensitive files (.env, credentials.json, .npmrc, etc.)
+- **Config** — sensitive files, CI/CD misconfigurations, XML config analysis
 
 ## Output
 
-Results are written to `report.json`. Use `--format text` for terminal output.
-Open `index.html` in a browser to view the HTML report.
+Results are written to `report.json`. Use `--text` for rich terminal output, `--simple` for plain tables, or `--html report.html` for a styled HTML report.

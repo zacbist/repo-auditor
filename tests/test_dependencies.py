@@ -19,7 +19,8 @@ class TestDependencyScanner(unittest.TestCase):
     def test_pinned_requirement_ok(self):
         self._write("requirements.txt", "flask==2.3.0\nrequests>=2.28.0\n")
         findings = self.scanner.scan(self.tmpdir)
-        self.assertEqual(len(findings), 0)
+        unpinned = [f for f in findings if f["issue"] == "unpinned version"]
+        self.assertEqual(len(unpinned), 0)
 
     def test_unpinned_requirement(self):
         self._write("requirements.txt", "flask\nrequests\n")
@@ -48,7 +49,8 @@ class TestDependencyScanner(unittest.TestCase):
     def test_comments_ignored(self):
         self._write("requirements.txt", "# this is a comment\nflask==2.3.0\n")
         findings = self.scanner.scan(self.tmpdir)
-        self.assertEqual(len(findings), 0)
+        unpinned = [f for f in findings if f["issue"] == "unpinned version"]
+        self.assertEqual(len(unpinned), 0)
 
 
 if __name__ == "__main__":
